@@ -329,7 +329,7 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 
 	var retContainer container.ContainerCreateCreatedBody
 
-	if retContainer, err = client.ContainerCreate(context.Background(), config, hostConfig, networkingConfig, d.Get("name").(string)); err != nil {
+	if retContainer, err = client.ContainerCreate(ctx, config, hostConfig, networkingConfig, d.Get("name").(string)); err != nil {
 		return diag.Errorf("Unable to create container: %s", err)
 	}
 
@@ -337,7 +337,7 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 
 	// Still support the deprecated properties
 	if v, ok := d.GetOk("networks"); ok {
-		if err := client.NetworkDisconnect(context.Background(), "bridge", retContainer.ID, false); err != nil {
+		if err := client.NetworkDisconnect(ctx, "bridge", retContainer.ID, false); err != nil {
 			if !strings.Contains(err.Error(), "is not connected to the network bridge") {
 				return diag.Errorf("Unable to disconnect the default network: %s", err)
 			}
@@ -349,7 +349,7 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 
 		for _, rawNetwork := range v.(*schema.Set).List() {
 			networkID := rawNetwork.(string)
-			if err := client.NetworkConnect(context.Background(), networkID, retContainer.ID, endpointConfig); err != nil {
+			if err := client.NetworkConnect(ctx, networkID, retContainer.ID, endpointConfig); err != nil {
 				return diag.Errorf("Unable to connect to network '%s': %s", networkID, err)
 			}
 		}
@@ -357,7 +357,7 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 
 	// But overwrite them with the future ones, if set
 	if v, ok := d.GetOk("networks_advanced"); ok {
-		if err := client.NetworkDisconnect(context.Background(), "bridge", retContainer.ID, false); err != nil {
+		if err := client.NetworkDisconnect(ctx, "bridge", retContainer.ID, false); err != nil {
 			if !strings.Contains(err.Error(), "is not connected to the network bridge") {
 				return diag.Errorf("Unable to disconnect the default network: %s", err)
 			}
@@ -379,7 +379,7 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 			}
 			endpointConfig.IPAMConfig = endpointIPAMConfig
 
-			if err := client.NetworkConnect(context.Background(), networkID, retContainer.ID, endpointConfig); err != nil {
+			if err := client.NetworkConnect(ctx, networkID, retContainer.ID, endpointConfig); err != nil {
 				return diag.Errorf("Unable to connect to network '%s': %s", networkID, err)
 			}
 		}
@@ -451,7 +451,7 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 			dstPath := "/"
 			uploadContent := bytes.NewReader(buf.Bytes())
 			options := types.CopyToContainerOptions{}
-			if err := client.CopyToContainer(context.Background(), retContainer.ID, dstPath, uploadContent, options); err != nil {
+			if err := client.CopyToContainer(ctx, retContainer.ID, dstPath, uploadContent, options); err != nil {
 				return diag.Errorf("Unable to upload volume content: %s", err)
 			}
 		}
@@ -460,15 +460,13 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 	if d.Get("start").(bool) {
 		creationTime = time.Now()
 		options := types.ContainerStartOptions{}
-		if err := client.ContainerStart(context.Background(), retContainer.ID, options); err != nil {
+		if err := client.ContainerStart(ctx, retContainer.ID, options); err != nil {
 			return diag.Errorf("Unable to start container: %s", err)
 		}
 	}
 
 	if d.Get("attach").(bool) {
 		var b bytes.Buffer
-
-		ctx := context.Background()
 
 		if d.Get("logs").(bool) {
 			go func() {
@@ -516,7 +514,7 @@ func resourceDockerContainerCreate(ctx context.Context, d *schema.ResourceData, 
 func resourceDockerContainerRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*ProviderConfig).DockerClient
 
-	apiContainer, err := fetchDockerContainer(d.Id(), client)
+	apiContainer, err := fetchDockerContainer(ctx, d.Id(), client)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -536,7 +534,7 @@ func resourceDockerContainerRead(ctx context.Context, d *schema.ResourceData, me
 	sleepTime := 500 * time.Millisecond
 
 	for i := loops; i > 0; i-- {
-		container, err = client.ContainerInspect(context.Background(), apiContainer.ID)
+		container, err = client.ContainerInspect(ctx, apiContainer.ID)
 		if err != nil {
 			return diag.Errorf("Error inspecting container %s: %s", apiContainer.ID, err)
 		}
@@ -753,7 +751,7 @@ func resourceDockerContainerUpdate(ctx context.Context, d *schema.ResourceData, 
 				updateConfig.Resources.MemorySwap = a
 			}
 			client := meta.(*ProviderConfig).DockerClient
-			_, err := client.ContainerUpdate(context.Background(), d.Id(), updateConfig)
+			_, err := client.ContainerUpdate(ctx, d.Id(), updateConfig)
 			if err != nil {
 				return diag.Errorf("Unable to update a container: %w", err)
 			}
@@ -776,7 +774,7 @@ func resourceDockerContainerDelete(ctx context.Context, d *schema.ResourceData, 
 		if d.Get("destroy_grace_seconds").(int) > 0 {
 			timeout := time.Duration(int32(d.Get("destroy_grace_seconds").(int))) * time.Second
 
-			if err := client.ContainerStop(context.Background(), d.Id(), &timeout); err != nil {
+			if err := client.ContainerStop(ctx, d.Id(), &timeout); err != nil {
 				return diag.Errorf("Error stopping container %s: %s", d.Id(), err)
 			}
 		}
@@ -787,11 +785,11 @@ func resourceDockerContainerDelete(ctx context.Context, d *schema.ResourceData, 
 		Force:         true,
 	}
 
-	if err := client.ContainerRemove(context.Background(), d.Id(), removeOpts); err != nil {
+	if err := client.ContainerRemove(ctx, d.Id(), removeOpts); err != nil {
 		return diag.Errorf("Error deleting container %s: %s", d.Id(), err)
 	}
 
-	waitOkC, errorC := client.ContainerWait(context.Background(), d.Id(), container.WaitConditionRemoved)
+	waitOkC, errorC := client.ContainerWait(ctx, d.Id(), container.WaitConditionRemoved)
 	select {
 	case waitOk := <-waitOkC:
 		log.Printf("[INFO] Container exited with code [%v]: '%s'", waitOk.StatusCode, d.Id())
@@ -915,8 +913,8 @@ func mapTypeMapValsToStringSlice(typeMap map[string]interface{}) []string {
 	return mapped
 }
 
-func fetchDockerContainer(ID string, client *client.Client) (*types.Container, error) {
-	apiContainers, err := client.ContainerList(context.Background(), types.ContainerListOptions{All: true})
+func fetchDockerContainer(ctx context.Context, ID string, client *client.Client) (*types.Container, error) {
+	apiContainers, err := client.ContainerList(ctx, types.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching container information from Docker: %s\n", err)
 	}
