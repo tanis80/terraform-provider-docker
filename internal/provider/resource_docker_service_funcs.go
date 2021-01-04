@@ -1047,7 +1047,9 @@ func createGenericResources(value interface{}) ([]swarm.GenericResource, error) 
 // createRestartPolicy creates the restart poliyc of the service
 func createRestartPolicy(v interface{}) (*swarm.RestartPolicy, error) {
 	restartPolicy := swarm.RestartPolicy{}
-	rawRestartPolicy := v.(map[string]interface{})
+	rawRestartPolicySingleItem := v.([]interface{})
+	// because it's a list with MaxItems=1
+	rawRestartPolicy := rawRestartPolicySingleItem[0].(map[string]interface{})
 
 	if v, ok := rawRestartPolicy["condition"]; ok {
 		restartPolicy.Condition = swarm.RestartPolicyCondition(v.(string))
@@ -1057,9 +1059,8 @@ func createRestartPolicy(v interface{}) (*swarm.RestartPolicy, error) {
 		restartPolicy.Delay = &parsed
 	}
 	if v, ok := rawRestartPolicy["max_attempts"]; ok {
-		parsed, _ := strconv.ParseInt(v.(string), 10, 64)
-		mapped := uint64(parsed)
-		restartPolicy.MaxAttempts = &mapped
+		parsed := uint64(v.(int))
+		restartPolicy.MaxAttempts = &parsed
 	}
 	if v, ok := rawRestartPolicy["window"]; ok {
 		parsed, _ := time.ParseDuration(v.(string))
